@@ -220,7 +220,7 @@ public class EventHandler {
 
     @SubscribeEvent(priority = EventPriority.LOW)
     public static void onHeal(LivingHealEvent event) {
-        LivingEntity entity = event.getEntityLiving();
+        LivingEntity entity = event.getEntity();
         if (entity.isDeadOrDying() || !CommonUtils.hasDamageModel(entity))
             return;
         event.setCanceled(true);
