@@ -1,6 +1,6 @@
 /*
  * FirstAid
- * Copyright (C) 2017-2022
+ * Copyright (C) 2017-2024
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,7 +29,7 @@ public class NoopPRCompatHandler implements IPRCompatHandler {
     }
 
     @Override
-    public boolean isBleeding(Player player, boolean checkStacktrace) {
+    public boolean isBleeding(Player player) {
         return false;
     }
 }

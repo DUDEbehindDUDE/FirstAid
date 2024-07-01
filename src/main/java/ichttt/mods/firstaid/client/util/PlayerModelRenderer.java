@@ -1,6 +1,6 @@
 /*
  * FirstAid
- * Copyright (C) 2017-2022
+ * Copyright (C) 2017-2024
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,16 +18,15 @@
 
 package ichttt.mods.firstaid.client.util;
 
-import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.math.Axis;
 import ichttt.mods.firstaid.FirstAid;
 import ichttt.mods.firstaid.FirstAidConfig;
 import ichttt.mods.firstaid.api.damagesystem.AbstractDamageablePart;
 import ichttt.mods.firstaid.api.damagesystem.AbstractPlayerDamageModel;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiComponent;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.ResourceLocation;
-import com.mojang.math.Vector3f;
 
 import java.util.Random;
 
@@ -39,7 +38,7 @@ public class PlayerModelRenderer {
     private static boolean otherWay = false;
     private static int cooldown = 0;
 
-    public static void renderPlayerHealth(PoseStack stack, AbstractPlayerDamageModel damageModel, boolean fourColors, GuiComponent gui, boolean flashState, float alpha, float partialTicks) {
+    public static void renderPlayerHealth(PoseStack stack, AbstractPlayerDamageModel damageModel, boolean fourColors, GuiGraphics guiGraphics, boolean flashState, float alpha, float partialTicks) {
         int yOffset = flashState ? 64 : 0;
         RenderSystem.enableBlend();
         RenderSystem.setShaderColor(1F, 1F, 1F, 1 - (alpha / 255));
@@ -53,28 +52,28 @@ public class PlayerModelRenderer {
                 stack.translate(angle * 1.5F, 0, 0);
             else
                 stack.translate(angle * 0.5F, 0, 0);
-            stack.mulPose(Vector3f.ZP.rotationDegrees(angle));
+            stack.mulPose(Axis.ZP.rotationDegrees(angle));
         }
 
         if (yOffset != 0)
             stack.translate(0, -yOffset, 0);
 
-        drawPart(stack, gui, fourColors, damageModel.HEAD, 8, yOffset + 0, 16, 16);
-        drawPart(stack, gui, fourColors, damageModel.BODY, 8, yOffset + 16, 16, 24);
-        drawPart(stack, gui, fourColors, damageModel.LEFT_ARM, 0, yOffset + 16, 8, 24);
-        drawPart(stack, gui, fourColors, damageModel.RIGHT_ARM, 24, yOffset + 16, 8, 24);
-        drawPart(stack, gui, fourColors, damageModel.LEFT_LEG, 8, yOffset + 40, 8, 16);
-        drawPart(stack, gui, fourColors, damageModel.RIGHT_LEG, 16, yOffset + 40, 8, 16);
-        drawPart(stack, gui, fourColors, damageModel.LEFT_FOOT, 8, yOffset + 56, 8, 8);
-        drawPart(stack, gui, fourColors, damageModel.RIGHT_FOOT, 16, yOffset + 56, 8, 8);
+        drawPart(guiGraphics, fourColors, damageModel.HEAD, 8, yOffset + 0, 16, 16);
+        drawPart(guiGraphics, fourColors, damageModel.BODY, 8, yOffset + 16, 16, 24);
+        drawPart(guiGraphics, fourColors, damageModel.LEFT_ARM, 0, yOffset + 16, 8, 24);
+        drawPart(guiGraphics, fourColors, damageModel.RIGHT_ARM, 24, yOffset + 16, 8, 24);
+        drawPart(guiGraphics, fourColors, damageModel.LEFT_LEG, 8, yOffset + 40, 8, 16);
+        drawPart(guiGraphics, fourColors, damageModel.RIGHT_LEG, 16, yOffset + 40, 8, 16);
+        drawPart(guiGraphics, fourColors, damageModel.LEFT_FOOT, 8, yOffset + 56, 8, 8);
+        drawPart(guiGraphics, fourColors, damageModel.RIGHT_FOOT, 16, yOffset + 56, 8, 8);
 
         RenderSystem.setShaderColor(1F, 1F, 1F, 1F);
     }
 
-    private static void drawPart(PoseStack stack, GuiComponent gui, boolean fourColors, AbstractDamageablePart part, int texX, int texY, int sizeX, int sizeY) {
+    private static void drawPart(GuiGraphics guiGraphics, boolean fourColors, AbstractDamageablePart part, int texX, int texY, int sizeX, int sizeY) {
         int rawTexX = texX;
         texX += SIZE * getState(part, fourColors);
-        gui.blit(stack, rawTexX, texY, texX, texY, sizeX, sizeY);
+        guiGraphics.blit(HEALTH_RENDER_LOCATION, rawTexX, texY, texX, texY, sizeX, sizeY);
     }
 
     private static int getState(AbstractDamageablePart part, boolean fourColors) {

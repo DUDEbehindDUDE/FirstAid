@@ -1,6 +1,6 @@
 /*
  * FirstAid
- * Copyright (C) 2017-2022
+ * Copyright (C) 2017-2024
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,12 +24,12 @@ import ichttt.mods.firstaid.client.ClientHooks;
 import ichttt.mods.firstaid.client.HUDHandler;
 import ichttt.mods.firstaid.common.CapProvider;
 import ichttt.mods.firstaid.common.util.CommonUtils;
+import ichttt.mods.firstaid.common.util.LoggingMarkers;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.Util;
-import net.minecraft.network.chat.TextComponent;
+import net.minecraft.network.chat.Component;
 import net.minecraftforge.network.NetworkEvent;
 
 import java.util.function.Supplier;
@@ -56,14 +56,14 @@ public class MessageConfiguration {
             NetworkEvent.Context ctx = supplier.get();
             CommonUtils.checkClient(ctx);
 
-            FirstAid.LOGGER.info("Received remote damage model");
+            FirstAid.LOGGER.info(LoggingMarkers.NETWORK, "Received remote damage model");
             ctx.enqueueWork(() -> {
                 AbstractPlayerDamageModel damageModel = CommonUtils.getDamageModel(Minecraft.getInstance().player);
                 damageModel.deserializeNBT(message.playerDamageModel);
                 if (damageModel.hasTutorial)
                     CapProvider.tutorialDone.add(Minecraft.getInstance().player.getName().getString());
                 else
-                    Minecraft.getInstance().player.sendMessage(new TextComponent("[First Aid] " + I18n.get("firstaid.tutorial.hint", ClientHooks.SHOW_WOUNDS.getTranslatedKeyMessage().getString())), Util.NIL_UUID);
+                    Minecraft.getInstance().player.sendSystemMessage(Component.literal("[First Aid] " + I18n.get("firstaid.tutorial.hint", ClientHooks.SHOW_WOUNDS.getTranslatedKeyMessage().getString())));
                 HUDHandler.INSTANCE.ticker = 200;
                 FirstAid.isSynced = true;
             });

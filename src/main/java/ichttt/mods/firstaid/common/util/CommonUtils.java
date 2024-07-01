@@ -1,6 +1,6 @@
 /*
  * FirstAid
- * Copyright (C) 2017-2022
+ * Copyright (C) 2017-2024
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,11 +30,11 @@ import ichttt.mods.firstaid.common.compat.playerrevive.IPRCompatHandler;
 import ichttt.mods.firstaid.common.compat.playerrevive.PRCompatManager;
 import ichttt.mods.firstaid.common.damagesystem.distribution.HealthDistribution;
 import ichttt.mods.firstaid.common.network.MessageSyncDamageModel;
-import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.common.util.LazyOptional;
 import net.minecraftforge.fml.ModContainer;
@@ -45,13 +45,7 @@ import net.minecraftforge.network.PacketDistributor;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.EnumMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 
 public class CommonUtils {
     @Nonnull
@@ -81,15 +75,15 @@ public class CommonUtils {
     }
 
     public static void killPlayer(@Nonnull AbstractPlayerDamageModel damageModel, @Nonnull Player player, @Nullable DamageSource source) {
-        if (player.level.isClientSide) {
+        if (player.level().isClientSide) {
             try {
                 throw new RuntimeException("Tried to kill the player on the client!");
             } catch (RuntimeException e) {
                 FirstAid.LOGGER.warn("Tried to kill the player on the client! This should only happen on the server! Ignoring...", e);
             }
         }
+        SynchedEntityDataWrapper wrapper = (SynchedEntityDataWrapper) player.entityData;
         if (source != null && FirstAidConfig.SERVER.allowOtherHealingItems.get()) {
-            SynchedEntityDataWrapper wrapper = (SynchedEntityDataWrapper) player.entityData;
             boolean protection;
             wrapper.toggleTracking(false);
             try {
@@ -110,7 +104,9 @@ public class CommonUtils {
         }
         IPRCompatHandler handler = PRCompatManager.getHandler();
         if (!handler.tryRevivePlayer(player, source))
-            ((SynchedEntityDataWrapper) player.entityData).set_impl(Player.DATA_HEALTH_ID, 0F);
+            wrapper.set_impl(Player.DATA_HEALTH_ID, 0F);
+        else
+            wrapper.toggleBeingRevived(true);
     }
 
     public static boolean isValidArmorSlot(EquipmentSlot slot) {

@@ -1,6 +1,6 @@
 /*
  * FirstAid
- * Copyright (C) 2017-2022
+ * Copyright (C) 2017-2024
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,7 +18,6 @@
 
 package ichttt.mods.firstaid.client.tutorial;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import ichttt.mods.firstaid.FirstAid;
 import ichttt.mods.firstaid.FirstAidConfig;
@@ -29,13 +28,12 @@ import ichttt.mods.firstaid.client.util.HealthRenderUtils;
 import ichttt.mods.firstaid.common.damagesystem.PlayerDamageModel;
 import ichttt.mods.firstaid.common.network.MessageClientRequest;
 import ichttt.mods.firstaid.common.util.CommonUtils;
-import net.minecraft.client.gui.components.Widget;
-import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.resources.language.I18n;
-import net.minecraft.network.chat.TextComponent;
-import net.minecraft.network.chat.TranslatableComponent;
+import net.minecraft.network.chat.Component;
 
 public class GuiTutorial extends Screen {
     private final GuiHealthScreen parent;
@@ -45,7 +43,7 @@ public class GuiTutorial extends Screen {
 
     @SuppressWarnings("deprecation") // we still need this method
     public GuiTutorial() {
-        super(new TranslatableComponent("firstaid.tutorial"));
+        super(Component.translatable("firstaid.tutorial"));
         this.demoModel = PlayerDamageModel.create();
         this.parent = new GuiHealthScreen(demoModel);
         this.action = new TutorialAction(this);
@@ -75,19 +73,19 @@ public class GuiTutorial extends Screen {
     public void init() {
         parent.init(minecraft, this.width, this.height);
         guiTop = parent.guiTop - 30;
-        addRenderableWidget(new Button(parent.guiLeft + GuiHealthScreen.xSize - 34, guiTop + 4, 32, 20, new TextComponent(">"), button -> {
+        addRenderableWidget(Button.builder(Component.literal(">"), button -> {
             if (action.hasNext()) GuiTutorial.this.action.next();
             else {
                 FirstAid.NETWORKING.sendToServer(new MessageClientRequest(MessageClientRequest.Type.TUTORIAL_COMPLETE));
                 minecraft.setScreen(new GuiHealthScreen(CommonUtils.getDamageModel(minecraft.player)));
             }
-        }));
+        }).bounds(parent.guiLeft + GuiHealthScreen.xSize - 34, guiTop + 4, 32, 20).build());
         for (AbstractWidget button : parent.getButtons()) {
             if (button == parent.cancelButton) {
-                addRenderableWidget(new Button(button.x, button.y, button.getWidth(), button.getHeight(), button.getMessage(), ignored -> {
+                addRenderableWidget(Button.builder(button.getMessage(), ignored -> {
                     FirstAid.NETWORKING.sendToServer(new MessageClientRequest(MessageClientRequest.Type.TUTORIAL_COMPLETE));
                     minecraft.setScreen(null);
-                }));
+                }).bounds(button.getX(), button.getY(), button.getWidth(), button.getHeight()).build());
                 continue;
             }
             addRenderableWidget(button);
@@ -95,22 +93,22 @@ public class GuiTutorial extends Screen {
         parent.getButtons().clear();
     }
 
-    public void drawOffsetString(PoseStack stack, String s, int yOffset) {
-        drawString(stack, minecraft.font, s, parent.guiLeft + 30, guiTop + yOffset, 0xFFFFFF);
+    public void drawOffsetString(GuiGraphics guiGraphics, String s, int yOffset) {
+        guiGraphics.drawString(minecraft.font, s, parent.guiLeft + 30, guiTop + yOffset, 0xFFFFFF);
     }
 
     @Override
-    public void render(PoseStack stack, int mouseX, int mouseY, float partialTicks) {
+    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTicks) {
+        PoseStack stack = guiGraphics.pose();
         stack.pushPose();
-        parent.render(stack, mouseX, mouseY, partialTicks);
+        parent.render(guiGraphics, mouseX, mouseY, partialTicks);
         stack.popPose();
-        RenderSystem.setShaderTexture(0, HealthRenderUtils.GUI_LOCATION);
-        blit(stack, parent.guiLeft, guiTop, 0, 139, GuiHealthScreen.xSize, 28);
+        guiGraphics.blit(HealthRenderUtils.SHOW_WOUNDS_LOCATION, parent.guiLeft, guiTop, 0, 139, GuiHealthScreen.xSize, 28);
         stack.pushPose();
-        this.action.draw(stack);
+        this.action.draw(guiGraphics);
         stack.popPose();
-        drawCenteredString(stack, minecraft.font, I18n.get("firstaid.tutorial.notice"), parent.guiLeft + (GuiHealthScreen.xSize / 2), parent.guiTop + 128, 0xFFFFFF);
-        super.render(stack, mouseX, mouseY, partialTicks);
+        guiGraphics.drawCenteredString(minecraft.font, I18n.get("firstaid.tutorial.notice"), parent.guiLeft + (GuiHealthScreen.xSize / 2), parent.guiTop + 128, 0xFFFFFF);
+        super.render(guiGraphics, mouseX, mouseY, partialTicks);
     }
 
     @Override

@@ -1,6 +1,6 @@
 /*
  * FirstAid
- * Copyright (C) 2017-2022
+ * Copyright (C) 2017-2024
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -72,18 +72,8 @@ public class PRPresentCompatHandler implements IPRCompatHandler {
     }
 
     @Override
-    public boolean isBleeding(Player player, boolean checkStacktrace) {
+    public boolean isBleeding(Player player) {
         IBleeding revival = getBleedingCapIfPossible(player);
-        if (checkStacktrace) {
-            StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-            if (stackTrace.length > 4) {
-                StackTraceElement element = stackTrace[4];
-                if (element.getClassName().equals("team.creative.playerrevive.server.PlayerReviveServer") && element.getMethodName().equals("revive")) {
-                    // HACK: Found setHealth caused by revive - ignore and tell we are still bleeding if though this is technically wrong
-                    return true;
-                }
-            }
-        }
         if (revival != null) {
             return revival.isBleeding() && revival.timeLeft() > 0;
         }

@@ -1,6 +1,6 @@
 /*
  * FirstAid
- * Copyright (C) 2017-2022
+ * Copyright (C) 2017-2024
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,22 +20,23 @@ package ichttt.mods.firstaid.common.damagesystem.distribution;
 
 import ichttt.mods.firstaid.FirstAid;
 import ichttt.mods.firstaid.FirstAidConfig;
-import ichttt.mods.firstaid.api.IDamageDistribution;
 import ichttt.mods.firstaid.api.damagesystem.AbstractDamageablePart;
 import ichttt.mods.firstaid.api.damagesystem.AbstractPlayerDamageModel;
+import ichttt.mods.firstaid.api.distribution.IDamageDistributionAlgorithm;
 import ichttt.mods.firstaid.api.enums.EnumPlayerPart;
 import ichttt.mods.firstaid.api.event.FirstAidLivingDamageEvent;
-import ichttt.mods.firstaid.common.EventHandler;
+import ichttt.mods.firstaid.common.RegistryObjects;
 import ichttt.mods.firstaid.common.damagesystem.PlayerDamageModel;
 import ichttt.mods.firstaid.common.network.MessageUpdatePart;
 import ichttt.mods.firstaid.common.util.ArmorUtils;
 import ichttt.mods.firstaid.common.util.CommonUtils;
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.EquipmentSlot;
+import ichttt.mods.firstaid.common.util.LoggingMarkers;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.stats.Stats;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.common.ForgeHooks;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.network.PacketDistributor;
@@ -47,11 +48,11 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-public abstract class DamageDistribution implements IDamageDistribution {
+public abstract class DamageDistribution implements IDamageDistributionAlgorithm {
 
-    public static float handleDamageTaken(IDamageDistribution damageDistribution, AbstractPlayerDamageModel damageModel, float damage, @Nonnull Player player, @Nonnull DamageSource source, boolean addStat, boolean redistributeIfLeft) {
+    public static float handleDamageTaken(IDamageDistributionAlgorithm damageDistribution, AbstractPlayerDamageModel damageModel, float damage, @Nonnull Player player, @Nonnull DamageSource source, boolean addStat, boolean redistributeIfLeft) {
         if (FirstAidConfig.GENERAL.debug.get()) {
-            FirstAid.LOGGER.info("--- Damaging {} using {} for dmg source {}, redistribute {}, addStat {} ---", damage, damageDistribution.toString(), source.msgId, redistributeIfLeft, addStat);
+            FirstAid.LOGGER.info(LoggingMarkers.DAMAGE_DISTRIBUTION, "--- Damaging {} using {} for dmg source {}, redistribute {}, addStat {} ---", damage, damageDistribution.toString(), source.type().msgId(), redistributeIfLeft, addStat);
         }
         CompoundTag beforeCache = damageModel.serializeNBT();
         if (!damageDistribution.skipGlobalPotionModifiers())
@@ -59,17 +60,16 @@ public abstract class DamageDistribution implements IDamageDistribution {
         //VANILLA COPY - combat tracker and exhaustion
         if (damage != 0.0F) {
             player.causeFoodExhaustion(source.getFoodExhaustion());
-            float currentHealth = player.getHealth();
-            player.getCombatTracker().recordDamage(source, currentHealth, damage);
+            player.getCombatTracker().recordDamage(source, damage);
         }
 
         float left = damageDistribution.distributeDamage(damage, player, source, addStat);
         if (left > 0 && redistributeIfLeft) {
-            boolean hasTriedNoKill = damageDistribution == RandomDamageDistribution.NEAREST_NOKILL || damageDistribution == RandomDamageDistribution.ANY_NOKILL;
-            damageDistribution = hasTriedNoKill ? RandomDamageDistribution.NEAREST_KILL : RandomDamageDistribution.getDefault();
+            boolean hasTriedNoKill = damageDistribution == RandomDamageDistributionAlgorithm.NEAREST_NOKILL || damageDistribution == RandomDamageDistributionAlgorithm.ANY_NOKILL;
+            damageDistribution = hasTriedNoKill ? RandomDamageDistributionAlgorithm.NEAREST_KILL : RandomDamageDistributionAlgorithm.getDefault();
             left = damageDistribution.distributeDamage(left, player, source, addStat);
             if (left > 0 && !hasTriedNoKill) {
-                damageDistribution = RandomDamageDistribution.NEAREST_KILL;
+                damageDistribution = RandomDamageDistributionAlgorithm.NEAREST_KILL;
                 left = damageDistribution.distributeDamage(left, player, source, addStat);
             }
         }
@@ -78,7 +78,7 @@ public abstract class DamageDistribution implements IDamageDistribution {
         if (MinecraftForge.EVENT_BUS.post(new FirstAidLivingDamageEvent(player, damageModel, before, source, left))) {
             damageModel.deserializeNBT(beforeCache); //restore prev state
             if (FirstAidConfig.GENERAL.debug.get()) {
-                FirstAid.LOGGER.info("--- DONE! Event got canceled ---");
+                FirstAid.LOGGER.info(LoggingMarkers.DAMAGE_DISTRIBUTION, "--- DONE! Event got canceled ---");
             }
             return 0F;
         }
@@ -86,7 +86,7 @@ public abstract class DamageDistribution implements IDamageDistribution {
         if (damageModel.isDead(player))
             CommonUtils.killPlayer(damageModel, player, source);
         if (FirstAidConfig.GENERAL.debug.get()) {
-            FirstAid.LOGGER.info("--- DONE! {} still left ---", left);
+            FirstAid.LOGGER.info(LoggingMarkers.DAMAGE_DISTRIBUTION, "--- DONE! {} still left ---", left);
         }
         return left;
     }
@@ -103,7 +103,7 @@ public abstract class DamageDistribution implements IDamageDistribution {
         Collections.shuffle(damageableParts);
         for (AbstractDamageablePart part : damageableParts) {
             float minHealth = minHealth(player, part);
-            float dmgDone = damage - part.damage(damage, player, !player.hasEffect(EventHandler.MORPHINE), minHealth);
+            float dmgDone = damage - part.damage(damage, player, !player.hasEffect(RegistryObjects.MORPHINE_EFFECT.get()), minHealth);
             FirstAid.NETWORKING.send(PacketDistributor.PLAYER.with(() -> (ServerPlayer) player), new MessageUpdatePart(part));
             if (addStat)
                 player.awardStat(Stats.DAMAGE_TAKEN, Math.round(dmgDone * 10.0F));
@@ -111,7 +111,7 @@ public abstract class DamageDistribution implements IDamageDistribution {
             if (damage == 0)
                 break;
             else if (damage < 0) {
-                FirstAid.LOGGER.error("Got negative damage {} left? Logic error? ", damage);
+                FirstAid.LOGGER.error(LoggingMarkers.DAMAGE_DISTRIBUTION, "Got negative damage {} left? Logic error? ", damage);
                 break;
             }
         }
@@ -126,7 +126,7 @@ public abstract class DamageDistribution implements IDamageDistribution {
         if (damage <= 0F) return 0F;
         AbstractPlayerDamageModel damageModel = CommonUtils.getDamageModel(player);
         if (FirstAidConfig.GENERAL.debug.get()) {
-            FirstAid.LOGGER.info("Starting distribution of {} damage...", damage);
+            FirstAid.LOGGER.info(LoggingMarkers.DAMAGE_DISTRIBUTION, "Starting distribution of {} damage...", damage);
         }
         for (Pair<EquipmentSlot, EnumPlayerPart[]> pair : getPartList()) {
             EquipmentSlot slot = pair.getLeft();
@@ -150,10 +150,10 @@ public abstract class DamageDistribution implements IDamageDistribution {
                 final float damageDistributed = dmgAfterReduce - damage;
                 damage = originalDamage - (damageDistributed * absorbFactor);
                 if (FirstAidConfig.GENERAL.debug.get()) {
-                    FirstAid.LOGGER.info("Distribution round: Not done yet, going to next round. Needed to distribute {} damage (reduced to {}) to {}, but only distributed {}. New damage to be distributed is {}, based on absorb factor {}", originalDamage, dmgAfterReduce, slot, damageDistributed, damage, absorbFactor);
+                    FirstAid.LOGGER.info(LoggingMarkers.DAMAGE_DISTRIBUTION, "Distribution round: Not done yet, going to next round. Needed to distribute {} damage (reduced to {}) to {}, but only distributed {}. New damage to be distributed is {}, based on absorb factor {}", originalDamage, dmgAfterReduce, slot, damageDistributed, damage, absorbFactor);
                 }
             } else if (FirstAidConfig.GENERAL.debug.get()) {
-                FirstAid.LOGGER.info("Skipping {}, no health > min in parts!", slot);
+                FirstAid.LOGGER.info(LoggingMarkers.DAMAGE_DISTRIBUTION, "Skipping {}, no health > min in parts!", slot);
             }
         }
         return damage;

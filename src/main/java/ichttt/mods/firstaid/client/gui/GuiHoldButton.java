@@ -1,6 +1,6 @@
 /*
  * FirstAid
- * Copyright (C) 2017-2022
+ * Copyright (C) 2017-2024
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,23 +18,17 @@
 
 package ichttt.mods.firstaid.client.gui;
 
-import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.platform.GlStateManager;
-import com.mojang.blaze3d.systems.RenderSystem;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.components.AbstractButton;
 import net.minecraft.Util;
+import net.minecraft.client.gui.components.AbstractButton;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
-import net.minecraft.util.Mth;
 import net.minecraft.network.chat.Component;
 
 public class GuiHoldButton extends AbstractButton {
     public final int id;
     private int holdTime;
-    private float textScaleFactor;
     public final boolean isRightSide;
     private long pressStart = -1;
+    private boolean mouseIsPressed = false;
 
     public GuiHoldButton(int id, int x, int y, int widthIn, int heightIn, Component buttonText, boolean isRightSide) {
         super(x, y, widthIn, heightIn, buttonText);
@@ -42,41 +36,8 @@ public class GuiHoldButton extends AbstractButton {
         this.isRightSide = isRightSide;
     }
 
-    public void setup(int holdTime, float textScaleFactor) {
+    public void setup(int holdTime) {
         this.holdTime = holdTime;
-        if (textScaleFactor > 0.95F)
-            textScaleFactor = 1F;
-        if (textScaleFactor < 0.8F)
-            textScaleFactor = 0.8F;
-        this.textScaleFactor = textScaleFactor;
-    }
-
-    @Override
-    public void renderButton(PoseStack stack, int p_renderButton_1_, int p_renderButton_2_, float p_renderButton_3_) {
-        Minecraft minecraft = Minecraft.getInstance();
-        Font fontrenderer = minecraft.font;
-        RenderSystem.setShaderTexture(0, WIDGETS_LOCATION);
-        if (this.active)
-            RenderSystem.setShaderColor(1.0F, 1.0F, 1.0F, this.alpha);
-        else
-            RenderSystem.setShaderColor(0.0F, 1.0F, 1.0F, this.alpha);
-        int i = this.getYImage(this.isHoveredOrFocused());
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA);
-        this.blit(stack, this.x, this.y, 0, 46 + i * 20, this.width / 2, this.height);
-        this.blit(stack, this.x + this.width / 2, this.y, 200 - this.width / 2, 46 + i * 20, this.width / 2, this.height);
-        this.renderBg(stack, minecraft, p_renderButton_1_, p_renderButton_2_);
-        int j = 0xFFFFFF;
-
-        //CHANGE: scale text if not fitting
-        if (textScaleFactor != 1F) {
-            stack.pushPose();
-            stack.scale(textScaleFactor, textScaleFactor, 1);
-            this.drawCenteredString(stack, fontrenderer, this.getMessage(), Math.round((this.x + this.width / 2F) / textScaleFactor), Math.round((this.y + (this.height - 8) / 2F) / textScaleFactor), j);
-            stack.popPose();
-        } else
-            this.drawCenteredString(stack, fontrenderer, this.getMessage(), this.x + this.width / 2, this.y + (this.height - 8) / 2, j | Mth.ceil(this.alpha * 255.0F) << 24);
     }
 
     @Override
@@ -87,14 +48,30 @@ public class GuiHoldButton extends AbstractButton {
     }
 
     @Override
-    protected void onFocusedChanged(boolean focused) {
-        super.onFocusedChanged(focused);
-        if (pressStart != -1 && !focused)
+    public void setFocused(boolean focused) {
+        super.setFocused(focused);
+        // The main point of this func is to stop the apply countdown if it has been started with a keyboard and the focus is switched
+        // (for example using tab)
+        // Small rant: In AbstractContainerEventHandler#setFocused, Mojang calls setFocus on the old and new element,
+        // once with the param false to signal the old component it is being deselected and once with true for the new one
+        // to signal that it is being selected
+        // this, however leads to an edge case in this code, as if a button is focused and is clicked the mouse, first onPress is called and then
+        // this func is first called with false and then with true, as AbstractContainerEventHandler#setFocused does not check if old == new...
+        // That's why mouseIsPressed is here
+        if (pressStart != -1 && !focused && !mouseIsPressed) {
             pressStart = -1;
+        }
+    }
+
+    @Override
+    public void onClick(double pMouseX, double pMouseY) {
+        super.onClick(pMouseX, pMouseY);
+        mouseIsPressed = true;
     }
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        mouseIsPressed = false;
         if (button != 0) return false;
         boolean result = pressStart != -1 && (super.mouseReleased(mouseX, mouseY, button));
         if (result) {
@@ -104,7 +81,7 @@ public class GuiHoldButton extends AbstractButton {
     }
 
     /**
-     * The time left in in ms
+     * The time left in ms
      */
     public int getTimeLeft() {
         if (pressStart == -1)
@@ -122,7 +99,7 @@ public class GuiHoldButton extends AbstractButton {
     }
 
     @Override
-    public void updateNarration(NarrationElementOutput pNarrationElementOutput) {
-        // shrug
+    protected void updateWidgetNarration(NarrationElementOutput pNarrationElementOutput) {
+
     }
 }

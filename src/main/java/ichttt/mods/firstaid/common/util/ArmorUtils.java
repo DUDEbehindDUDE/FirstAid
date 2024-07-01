@@ -1,6 +1,6 @@
 /*
  * FirstAid
- * Copyright (C) 2017-2022
+ * Copyright (C) 2017-2024
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,24 +18,25 @@
 
 package ichttt.mods.firstaid.common.util;
 
-import com.google.common.collect.Iterators;
 import com.google.common.math.DoubleMath;
 import ichttt.mods.firstaid.FirstAid;
 import ichttt.mods.firstaid.FirstAidConfig;
-import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.stats.Stats;
+import net.minecraft.tags.DamageTypeTags;
+import net.minecraft.world.damagesource.CombatRules;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.effect.MobEffects;
-import net.minecraft.stats.Stats;
-import net.minecraft.world.damagesource.CombatRules;
-import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraftforge.registries.ForgeRegistries;
 import org.apache.commons.lang3.mutable.MutableInt;
 
 import javax.annotation.Nonnull;
@@ -146,7 +147,7 @@ public class ArmorUtils {
         if (!DoubleMath.fuzzyEquals(sumOfAllAttributes, all, 0.001D)) {
             double diff = all - sumOfAllAttributes;
             if (FirstAidConfig.GENERAL.debug.get()) {
-                FirstAid.LOGGER.info("Attribute value for {} does not match sum! Diff is {}, distributing to all!", attribute.getRegistryName(), diff);
+                FirstAid.LOGGER.info("Attribute value for {} does not match sum! Diff is {}, distributing to all!", ForgeRegistries.ATTRIBUTES.getKey(attribute), diff);
             }
             return diff;
         }
@@ -158,7 +159,7 @@ public class ArmorUtils {
      */
     @SuppressWarnings("JavadocReference")
     public static float applyArmor(@Nonnull Player entity, @Nonnull ItemStack itemStack, @Nonnull DamageSource source, float damage, @Nonnull EquipmentSlot slot) {
-        if (source.isBypassArmor()) return damage;
+        if (source.is(DamageTypeTags.BYPASSES_ARMOR)) return damage;
         Item item = itemStack.getItem();
         float totalArmor = 0F;
         float totalToughness = 0F;
@@ -172,7 +173,7 @@ public class ArmorUtils {
         totalToughness += getGlobalRestAttribute(entity, Attributes.ARMOR_TOUGHNESS);
 
         if (damage > 0 && (totalArmor > 0 || totalToughness > 0)) {
-            if (item instanceof ArmorItem && (!source.isFire() || !item.isFireResistant())) {
+            if (item instanceof ArmorItem && (!source.is(DamageTypeTags.IS_FIRE) || !item.isFireResistant())) {
                 int itemDamage = Math.max((int) damage, 1);
                 itemStack.hurtAndBreak(itemDamage, entity, (player) -> player.broadcastBreakEvent(slot));
             }
@@ -186,9 +187,9 @@ public class ArmorUtils {
      */
     @SuppressWarnings("JavadocReference")
     public static float applyGlobalPotionModifiers(Player player, DamageSource source, float damage) {
-        if (source.isBypassMagic())
+        if (source.is(DamageTypeTags.BYPASSES_ARMOR))
             return damage;
-        if (player.hasEffect(MobEffects.DAMAGE_RESISTANCE) && source != DamageSource.OUT_OF_WORLD) {
+        if (player.hasEffect(MobEffects.DAMAGE_RESISTANCE) && source != player.damageSources().fellOutOfWorld()) {
             @SuppressWarnings("ConstantConditions")
             int i = (player.getEffect(MobEffects.DAMAGE_RESISTANCE).getAmplifier() + 1) * FirstAidConfig.SERVER.resistanceReductionPercentPerLevel.get();
             int j = 100 - i;
@@ -223,7 +224,7 @@ public class ArmorUtils {
                 int val = enchantment.getDamageProtection(level, source);
                 List<? extends String> resourceLocation = FirstAidConfig.SERVER.enchMulOverrideResourceLocations.get();
                 List<? extends Integer> multiplierOverride = FirstAidConfig.SERVER.enchMulOverrideMultiplier.get();
-                String enchantRlAsString = enchantment.getRegistryName().toString();
+                String enchantRlAsString = ForgeRegistries.ENCHANTMENTS.getKey(enchantment).toString();
                 int multiplier = FirstAidConfig.SERVER.enchantmentMultiplier.get();
                 boolean debug = FirstAidConfig.GENERAL.debug.get();
                 if (debug) {

@@ -1,6 +1,6 @@
 /*
  * FirstAid
- * Copyright (C) 2017-2022
+ * Copyright (C) 2017-2024
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,25 +20,22 @@ package ichttt.mods.firstaid.common;
 
 import ichttt.mods.firstaid.FirstAid;
 import ichttt.mods.firstaid.FirstAidConfig;
-import ichttt.mods.firstaid.api.IDamageDistribution;
 import ichttt.mods.firstaid.api.damagesystem.AbstractPlayerDamageModel;
+import ichttt.mods.firstaid.api.distribution.IDamageDistributionAlgorithm;
 import ichttt.mods.firstaid.api.enums.EnumPlayerPart;
-import ichttt.mods.firstaid.common.apiimpl.FirstAidRegistryImpl;
-import ichttt.mods.firstaid.common.damagesystem.PlayerDamageModel;
 import ichttt.mods.firstaid.common.damagesystem.distribution.DamageDistribution;
 import ichttt.mods.firstaid.common.damagesystem.distribution.HealthDistribution;
-import ichttt.mods.firstaid.common.damagesystem.distribution.RandomDamageDistribution;
-import ichttt.mods.firstaid.common.damagesystem.distribution.StandardDamageDistribution;
-import ichttt.mods.firstaid.common.items.FirstAidItems;
+import ichttt.mods.firstaid.common.damagesystem.distribution.RandomDamageDistributionAlgorithm;
+import ichttt.mods.firstaid.common.damagesystem.distribution.StandardDamageDistributionAlgorithm;
 import ichttt.mods.firstaid.common.network.MessageConfiguration;
 import ichttt.mods.firstaid.common.network.MessageSyncDamageModel;
+import ichttt.mods.firstaid.common.registries.FirstAidRegistryLookups;
 import ichttt.mods.firstaid.common.util.CommonUtils;
 import ichttt.mods.firstaid.common.util.PlayerSizeHelper;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.sounds.SoundEvent;
+import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.damagesource.DamageSource;
-import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
@@ -56,52 +53,38 @@ import net.minecraft.world.level.storage.loot.providers.number.NumberProvider;
 import net.minecraft.world.level.storage.loot.providers.number.UniformGenerator;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
-import net.minecraftforge.event.AttachCapabilitiesEvent;
-import net.minecraftforge.event.LootTableLoadEvent;
-import net.minecraftforge.event.RegisterCommandsEvent;
-import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.*;
 import net.minecraftforge.event.entity.ProjectileImpactEvent;
 import net.minecraftforge.event.entity.living.LivingHealEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.level.LevelEvent;
+import net.minecraftforge.event.level.SleepFinishedTimeEvent;
 import net.minecraftforge.event.server.ServerStoppedEvent;
-import net.minecraftforge.event.world.SleepFinishedTimeEvent;
-import net.minecraftforge.event.world.WorldEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.network.PacketDistributor;
-import net.minecraftforge.registries.ObjectHolder;
 import org.apache.commons.lang3.tuple.Pair;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Map;
-import java.util.Random;
-import java.util.WeakHashMap;
+import java.util.*;
 
 public class EventHandler {
-    public static final Random rand = new Random();
-    @ObjectHolder("firstaid:debuff.heartbeat")
-    public static final SoundEvent HEARTBEAT = FirstAidItems.getNull();
-    @ObjectHolder("firstaid:morphine")
-    public static final MobEffect MORPHINE = FirstAidItems.getNull();
-    @ObjectHolder("minecraft:resistance")
-    public static final MobEffect DAMAGE_RESISTANCE = FirstAidItems.getNull();
+    public static final Random RAND = new Random();
 
     public static final Map<Player, Pair<Entity, HitResult>> hitList = new WeakHashMap<>();
 
     @SubscribeEvent(priority = EventPriority.LOWEST) //so all other can modify their damage first, and we apply after that
     public static void onLivingHurt(LivingHurtEvent event) {
-        LivingEntity entity = event.getEntityLiving();
-        if (entity.level.isClientSide || !CommonUtils.hasDamageModel(entity))
+        LivingEntity entity = event.getEntity();
+        if (entity.level().isClientSide || !CommonUtils.hasDamageModel(entity))
             return;
         float amountToDamage = event.getAmount();
         Player player = (Player) entity;
         AbstractPlayerDamageModel damageModel = CommonUtils.getDamageModel(player);
         DamageSource source = event.getSource();
 
-        if (amountToDamage == Float.MAX_VALUE) {
+        if (amountToDamage == Float.MAX_VALUE || Float.isNaN(amountToDamage) || amountToDamage == Float.POSITIVE_INFINITY) {
             damageModel.forEach(damageablePart -> damageablePart.currentHealth = 0F);
             if (player instanceof ServerPlayer)
                 FirstAid.NETWORKING.send(PacketDistributor.PLAYER.with(() -> (ServerPlayer) player), new MessageSyncDamageModel(damageModel, false));
@@ -111,16 +94,16 @@ public class EventHandler {
         }
 
         boolean addStat = amountToDamage < 3.4028235E37F;
-        IDamageDistribution damageDistribution = FirstAidRegistryImpl.INSTANCE.getDamageDistributionForSource(source);
+        IDamageDistributionAlgorithm damageDistribution = FirstAidRegistryLookups.getDamageDistributions(source.type());
 
-        if (source.isProjectile()) {
+        if (source.is(DamageTypeTags.IS_PROJECTILE)) {
             Pair<Entity, HitResult> rayTraceResult = hitList.remove(player);
             if (rayTraceResult != null) {
                 Entity entityProjectile = rayTraceResult.getLeft();
                 EquipmentSlot slot = PlayerSizeHelper.getSlotTypeForProjectileHit(entityProjectile, player);
                 if (slot != null) {
-                    EnumPlayerPart[] possibleParts = CommonUtils.getPartArrayForSlot(slot);
-                    damageDistribution = new StandardDamageDistribution(Collections.singletonList(Pair.of(slot, possibleParts)), false, true);
+                    List<EnumPlayerPart> possibleParts = CommonUtils.getPartListForSlot(slot);
+                    damageDistribution = new StandardDamageDistributionAlgorithm(Collections.singletonMap(slot, possibleParts), false, true);
                 }
             }
         }
@@ -128,7 +111,7 @@ public class EventHandler {
             // No given distribution found, and no projectile distribution either. Let's check if we can tell by the source where we should apply the damage, otherwise fall back to random
             damageDistribution = PlayerSizeHelper.getMeleeDistribution(player, source);
             if (damageDistribution == null) {
-                damageDistribution = RandomDamageDistribution.getDefault();
+                damageDistribution = RandomDamageDistributionAlgorithm.getDefault();
             }
         }
 
@@ -146,7 +129,7 @@ public class EventHandler {
             return;
 
         Entity entity = ((EntityHitResult) result).getEntity();
-        if (!entity.level.isClientSide && entity instanceof Player) {
+        if (!entity.level().isClientSide && entity instanceof Player) {
             hitList.put((Player) entity, Pair.of(event.getEntity(), event.getRayTraceResult()));
         }
     }
@@ -156,8 +139,7 @@ public class EventHandler {
         Entity obj = event.getObject();
         if (CommonUtils.hasDamageModel(obj)) {
             Player player = (Player) obj;
-            AbstractPlayerDamageModel damageModel = PlayerDamageModel.create();
-            event.addCapability(CapProvider.IDENTIFIER, new CapProvider(damageModel));
+            event.addCapability(CapProvider.IDENTIFIER, new CapProvider());
             //replace the data manager with our wrapper to grab absorption
             player.entityData = new SynchedEntityDataWrapper(player, player.entityData);
         }
@@ -167,7 +149,7 @@ public class EventHandler {
     public static void tickPlayers(TickEvent.PlayerTickEvent event) {
         if (event.phase == TickEvent.Phase.END && !event.player.getAbilities().invulnerable) {
             if (!event.player.isAlive()) return;
-            CommonUtils.getDamageModel(event.player).tick(event.player.level, event.player);
+            CommonUtils.getDamageModel(event.player).tick(event.player.level(), event.player);
             hitList.remove(event.player); //Damage should be done in the same tick as the hit was noted, otherwise we got a false-positive
         }
     }
@@ -175,7 +157,7 @@ public class EventHandler {
     @SubscribeEvent
     public static void onSleepFinished(SleepFinishedTimeEvent event) {
         if (ModList.get().isLoaded("morpheus")) return;
-        for (Player player : event.getWorld().players()) {
+        for (Player player : event.getLevel().players()) {
             if (player.isSleepingLongEnough())
                 CommonUtils.getDamageModel(player).sleepHeal(player);
         }
@@ -221,15 +203,15 @@ public class EventHandler {
             return;
         }
         LootPool.Builder builder = LootPool.lootPool().name("firstaid_main").setRolls(poolRolls);
-        builder.add(LootItem.lootTableItem(() -> FirstAidItems.BANDAGE)
+        builder.add(LootItem.lootTableItem(RegistryObjects.BANDAGE::get)
                     .apply(SetItemCountFunction.setCount(bandageMax))
                     .setWeight(bandage)
                     .setQuality(0));
-        builder.add(LootItem.lootTableItem(() -> FirstAidItems.PLASTER)
+        builder.add(LootItem.lootTableItem(RegistryObjects.PLASTER::get)
                     .apply(SetItemCountFunction.setCount(plasterMax))
                     .setWeight(plaster)
                     .setQuality(0));
-        builder.add(LootItem.lootTableItem(() -> FirstAidItems.MORPHINE)
+        builder.add(LootItem.lootTableItem(RegistryObjects.MORPHINE::get)
                     .apply(SetItemCountFunction.setCount(morphineMax))
                     .setWeight(morphine)
                     .setQuality(0));
@@ -242,7 +224,7 @@ public class EventHandler {
         if (entity.isDeadOrDying() || !CommonUtils.hasDamageModel(entity))
             return;
         event.setCanceled(true);
-        if (entity.level.isClientSide || !FirstAidConfig.SERVER.allowOtherHealingItems.get())
+        if (entity.level().isClientSide || !FirstAidConfig.SERVER.allowOtherHealingItems.get())
             return;
         float amount = event.getAmount();
         //Hacky shit to reduce vanilla regen
@@ -260,33 +242,40 @@ public class EventHandler {
 
     @SubscribeEvent(priority = EventPriority.HIGH)
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
-        if (!event.getPlayer().level.isClientSide) {
-            FirstAid.LOGGER.debug("Sending damage model to " + event.getPlayer().getName());
-            AbstractPlayerDamageModel damageModel = CommonUtils.getDamageModel(event.getPlayer());
+        if (!event.getEntity().level().isClientSide) {
+            FirstAid.LOGGER.debug("Sending damage model to " + event.getEntity().getName());
+            AbstractPlayerDamageModel damageModel = CommonUtils.getDamageModel(event.getEntity());
             if (damageModel.hasTutorial)
-                CapProvider.tutorialDone.add(event.getPlayer().getName().getString());
-            ServerPlayer playerMP = (ServerPlayer) event.getPlayer();
+                CapProvider.tutorialDone.add(event.getEntity().getName().getString());
+            ServerPlayer playerMP = (ServerPlayer) event.getEntity();
             FirstAid.NETWORKING.send(PacketDistributor.PLAYER.with(() -> playerMP), new MessageConfiguration(damageModel.serializeNBT()));
         }
     }
 
     @SubscribeEvent(priority =  EventPriority.LOW)
     public static void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
-        hitList.remove(event.getPlayer());
+        hitList.remove(event.getEntity());
     }
 
     @SubscribeEvent
-    public static void onWorldLoad(WorldEvent.Load event) {
-        LevelAccessor world = event.getWorld();
+    public static void onWorldLoad(LevelEvent.Load event) {
+        LevelAccessor world = event.getLevel();
         if (!world.isClientSide() && world instanceof Level)
             ((Level) world).getGameRules().getRule(GameRules.RULE_NATURAL_REGENERATION).set(FirstAidConfig.SERVER.allowNaturalRegeneration.get(), ((Level) world).getServer());
     }
 
     @SubscribeEvent
     public static void onDimensionChange(PlayerEvent.PlayerChangedDimensionEvent event) {
-        Player player = event.getPlayer();
-        if (!player.level.isClientSide && player instanceof ServerPlayer) //Mojang seems to wipe all caps on teleport
+        Player player = event.getEntity();
+        if (!player.level().isClientSide && player instanceof ServerPlayer) //Mojang seems to wipe all caps on teleport
             FirstAid.NETWORKING.send(PacketDistributor.PLAYER.with(() -> (ServerPlayer) player), new MessageSyncDamageModel(CommonUtils.getDamageModel(player), true));
+    }
+
+    @SubscribeEvent
+    public static void tagsUpdated(TagsUpdatedEvent event) {
+        if (event.shouldUpdateStaticData()) {
+            FirstAidRegistryLookups.init(event.getRegistryAccess());
+        }
     }
 
     @SubscribeEvent
@@ -294,6 +283,7 @@ public class EventHandler {
         FirstAid.LOGGER.debug("Cleaning up");
         CapProvider.tutorialDone.clear();
         EventHandler.hitList.clear();
+        FirstAidRegistryLookups.reset();
     }
 
     @SubscribeEvent
@@ -303,8 +293,8 @@ public class EventHandler {
 
     @SubscribeEvent(priority = EventPriority.LOW)
     public static void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
-        Player player = event.getPlayer();
-        if (!event.isEndConquered() && !player.level.isClientSide && player instanceof ServerPlayer) {
+        Player player = event.getEntity();
+        if (!event.isEndConquered() && !player.level().isClientSide && player instanceof ServerPlayer) {
             AbstractPlayerDamageModel damageModel = CommonUtils.getDamageModel(player);
             damageModel.runScaleLogic(player);
             damageModel.forEach(damageablePart -> damageablePart.heal(damageablePart.getMaxHealth(), player, false));

@@ -1,6 +1,6 @@
 /*
  * FirstAid
- * Copyright (C) 2017-2022
+ * Copyright (C) 2017-2024
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,15 +24,11 @@ import ichttt.mods.firstaid.api.damagesystem.AbstractPlayerDamageModel;
 import ichttt.mods.firstaid.api.enums.EnumPlayerPart;
 import ichttt.mods.firstaid.common.network.MessageAddHealth;
 import ichttt.mods.firstaid.common.util.CommonUtils;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.network.PacketDistributor;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
 
 public class HealthDistribution {
     private static final List<EnumPlayerPart> parts;
@@ -43,7 +39,7 @@ public class HealthDistribution {
     }
 
     public static void manageHealth(float health, AbstractPlayerDamageModel damageModel, Player player, boolean sendChanges, boolean distribute) {
-        if (sendChanges && player.level.isClientSide) {
+        if (sendChanges && player.level().isClientSide) {
             FirstAid.LOGGER.warn("The sendChanges flag was set on the client, it can however only work on the server!" ,new RuntimeException("sendChanges flag set on the client, this is not supported!"));
             sendChanges = false;
         } else if (sendChanges && !(player instanceof ServerPlayer)) { //EntityOtherPlayerMP? log something?
@@ -51,7 +47,7 @@ public class HealthDistribution {
         }
 
         float toHeal = distribute ? health / 8F : health;
-        Collections.shuffle(parts, player.level.random);
+        Collections.shuffle(parts);
         List<AbstractDamageablePart> damageableParts = new ArrayList<>(parts.size());
 
         for (EnumPlayerPart part : parts) {
@@ -64,7 +60,7 @@ public class HealthDistribution {
 
         for (int i = 0; i < 8; i++) {
             AbstractDamageablePart part = damageableParts.get(i);
-            float diff = toHeal - part.heal(toHeal, player, !player.level.isClientSide);
+            float diff = toHeal - part.heal(toHeal, player, !player.level().isClientSide);
             //prevent inaccuracy
             diff = Math.round(diff * 10000.0F) / 10000.0F;
             healingDone[part.part.ordinal()] = diff;

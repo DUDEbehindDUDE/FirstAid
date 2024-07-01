@@ -1,6 +1,6 @@
 /*
  * FirstAid
- * Copyright (C) 2017-2022
+ * Copyright (C) 2017-2024
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,7 +20,6 @@ package ichttt.mods.firstaid.common.damagesystem;
 
 import ichttt.mods.firstaid.FirstAid;
 import ichttt.mods.firstaid.FirstAidConfig;
-import ichttt.mods.firstaid.api.FirstAidRegistry;
 import ichttt.mods.firstaid.api.damagesystem.AbstractDamageablePart;
 import ichttt.mods.firstaid.api.damagesystem.AbstractPlayerDamageModel;
 import ichttt.mods.firstaid.api.debuff.IDebuff;
@@ -28,18 +27,20 @@ import ichttt.mods.firstaid.api.enums.EnumDebuffSlot;
 import ichttt.mods.firstaid.api.enums.EnumPlayerPart;
 import ichttt.mods.firstaid.client.util.HealthRenderUtils;
 import ichttt.mods.firstaid.common.CapProvider;
-import ichttt.mods.firstaid.common.SynchedEntityDataWrapper;
 import ichttt.mods.firstaid.common.EventHandler;
-import ichttt.mods.firstaid.common.apiimpl.FirstAidRegistryImpl;
+import ichttt.mods.firstaid.common.RegistryObjects;
+import ichttt.mods.firstaid.common.SynchedEntityDataWrapper;
 import ichttt.mods.firstaid.common.compat.playerrevive.PRCompatManager;
 import ichttt.mods.firstaid.common.damagesystem.debuff.SharedDebuff;
 import ichttt.mods.firstaid.common.network.MessageSyncDamageModel;
+import ichttt.mods.firstaid.common.registries.FirstAidRegistryLookups;
 import ichttt.mods.firstaid.common.util.CommonUtils;
 import net.minecraft.client.Minecraft;
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
@@ -47,14 +48,7 @@ import net.minecraftforge.network.PacketDistributor;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.NoSuchElementException;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 
 public class PlayerDamageModel extends AbstractPlayerDamageModel {
     private final Set<SharedDebuff> sharedDebuffs = new HashSet<>();
@@ -67,11 +61,10 @@ public class PlayerDamageModel extends AbstractPlayerDamageModel {
     private int resyncTimer = -1;
 
     public static PlayerDamageModel create() {
-        FirstAidRegistry registry = FirstAidRegistryImpl.INSTANCE;
-        IDebuff[] headDebuffs = registry.getDebuffs(EnumDebuffSlot.HEAD);
-        IDebuff[] bodyDebuffs = registry.getDebuffs(EnumDebuffSlot.BODY);
-        IDebuff[] armsDebuffs = registry.getDebuffs(EnumDebuffSlot.ARMS);
-        IDebuff[] legFootDebuffs = registry.getDebuffs(EnumDebuffSlot.LEGS_AND_FEET);
+        IDebuff[] headDebuffs = FirstAidRegistryLookups.getDebuffs(EnumDebuffSlot.HEAD);
+        IDebuff[] bodyDebuffs = FirstAidRegistryLookups.getDebuffs(EnumDebuffSlot.BODY);
+        IDebuff[] armsDebuffs = FirstAidRegistryLookups.getDebuffs(EnumDebuffSlot.ARMS);
+        IDebuff[] legFootDebuffs = FirstAidRegistryLookups.getDebuffs(EnumDebuffSlot.LEGS_AND_FEET);
         return new PlayerDamageModel(headDebuffs, bodyDebuffs, armsDebuffs, legFootDebuffs);
     }
 
@@ -165,11 +158,12 @@ public class PlayerDamageModel extends AbstractPlayerDamageModel {
 
         runScaleLogic(player);
 
+        MobEffect morphineEffect = RegistryObjects.MORPHINE_EFFECT.get();
         //morphine update
         if (this.needsMorphineUpdate) {
-            player.addEffect(new MobEffectInstance(EventHandler.MORPHINE, this.morphineTicksLeft, 0, false, false));
+            player.addEffect(new MobEffectInstance(morphineEffect, this.morphineTicksLeft, 0, false, false));
         }
-        MobEffectInstance morphine = player.getEffect(EventHandler.MORPHINE);
+        MobEffectInstance morphine = player.getEffect(morphineEffect);
         if (!this.needsMorphineUpdate) {
             this.morphineTicksLeft = morphine == null ? 0 : morphine.getDuration();
         }
@@ -185,7 +179,7 @@ public class PlayerDamageModel extends AbstractPlayerDamageModel {
     }
 
     public static int getRandMorphineDuration() { //Tweak tooltip event when changing as well
-        return ((EventHandler.rand.nextInt(5) * 20 * 15) + 20 * 210);
+        return ((EventHandler.RAND.nextInt(5) * 20 * 15) + 20 * 210);
     }
 
     @Deprecated
@@ -197,7 +191,7 @@ public class PlayerDamageModel extends AbstractPlayerDamageModel {
 
     @Override
     public void applyMorphine(Player player) {
-        player.addEffect(new MobEffectInstance(EventHandler.MORPHINE, getRandMorphineDuration(), 0, false, false));
+        player.addEffect(new MobEffectInstance(RegistryObjects.MORPHINE_EFFECT.get(), getRandMorphineDuration(), 0, false, false));
     }
 
     @Deprecated
@@ -288,7 +282,7 @@ public class PlayerDamageModel extends AbstractPlayerDamageModel {
 
     @Override
     public boolean isDead(@Nullable Player player) {
-        boolean bleeding = PRCompatManager.getHandler().isBleeding(player, false);
+        boolean bleeding = PRCompatManager.getHandler().isBleeding(player);
         if (bleeding) {
             return true; //Technically not dead yet, but we should still return true to avoid running ticking and other logic
         }
@@ -373,20 +367,20 @@ public class PlayerDamageModel extends AbstractPlayerDamageModel {
             }
         }
         //make sure to resync the client health
-        if (!player.level.isClientSide && player instanceof ServerPlayer)
+        if (!player.level().isClientSide && player instanceof ServerPlayer)
             FirstAid.NETWORKING.send(PacketDistributor.PLAYER.with(() -> (ServerPlayer) player), new MessageSyncDamageModel(this, true)); //Upload changes to the client
     }
 
     @Override
     public void runScaleLogic(Player player) {
         if (FirstAidConfig.SERVER.scaleMaxHealth.get()) { //Attempt to calculate the max health of the body parts based on the maxHealth attribute
-            player.level.getProfiler().push("healthscaling");
+            player.level().getProfiler().push("healthscaling");
             float globalFactor = player.getMaxHealth() / 20F;
             if (prevScaleFactor != globalFactor) {
                 if (FirstAidConfig.GENERAL.debug.get()) {
                     FirstAid.LOGGER.info("Starting health scaling factor {} -> {} (max health {})", prevScaleFactor, globalFactor, player.getMaxHealth());
                 }
-                player.level.getProfiler().push("distribution");
+                player.level().getProfiler().push("distribution");
                 int reduced = 0;
                 int added = 0;
                 float expectedNewMaxHealth = 0F;
@@ -417,7 +411,7 @@ public class PlayerDamageModel extends AbstractPlayerDamageModel {
                     }
                     part.setMaxHealth(result);
                 }
-                player.level.getProfiler().popPush("correcting");
+                player.level().getProfiler().popPush("correcting");
                 if (Math.abs(expectedNewMaxHealth - newMaxHealth) >= 2F) {
                     if (FirstAidConfig.GENERAL.debug.get()) {
                         FirstAid.LOGGER.info("Entering second stage - diff {}", Math.abs(expectedNewMaxHealth - newMaxHealth));
@@ -444,10 +438,10 @@ public class PlayerDamageModel extends AbstractPlayerDamageModel {
                         }
                     }
                 }
-                player.level.getProfiler().pop();
+                player.level().getProfiler().pop();
             }
             prevScaleFactor = globalFactor;
-            player.level.getProfiler().pop();
+            player.level().getProfiler().pop();
         }
     }
 

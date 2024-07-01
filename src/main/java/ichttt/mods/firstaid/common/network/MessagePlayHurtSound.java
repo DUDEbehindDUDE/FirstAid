@@ -1,6 +1,6 @@
 /*
  * FirstAid
- * Copyright (C) 2017-2022
+ * Copyright (C) 2017-2024
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,7 +42,7 @@ public class MessagePlayHurtSound {
     }
 
     public void encode(FriendlyByteBuf buf) {
-        buf.writeResourceLocation(Objects.requireNonNull(sound.getRegistryName()));
+        buf.writeResourceLocation(Objects.requireNonNull(ForgeRegistries.SOUND_EVENTS.getKey(sound)));
         buf.writeInt(duration);
     }
 
